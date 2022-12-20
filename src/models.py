@@ -16,16 +16,17 @@ class GeneratorNetwork(hk.Module):
         :param s: state
         :return: Q(s,a)
         """
-        
-        h = hk.Linear(400)(s)
+
+        h = hk.Linear(512)(s)
         h = jax.nn.relu(h)
-        h = hk.Linear(400)(h)
+        h = hk.Linear(512)(s)
+        h = jax.nn.relu(h)
+        h = hk.Linear(512)(s)
+        h = jax.nn.relu(h)
+        h = hk.Linear(512)(s)
         h = jax.nn.relu(h)
 
-        h = hk.Linear(300)(h)
-        h = jax.nn.relu(h)
-
-        return hk.Linear(self.data_dim, w_init=hk.initializers.RandomUniform(-3e-3, 3e-3))(h)
+        return hk.Linear(self.data_dim)(h)
 
 class CriticNetwork(hk.Module):
     def __init__(self, name: Optional[str] = None) -> None:
@@ -40,11 +41,13 @@ class CriticNetwork(hk.Module):
         """
 
         h = s
-        h = hk.Linear(400)(h)
+        h = hk.Linear(512, w_init=hk.initializers.RandomUniform(-3e-3, 3e-3))(h)
         h = jax.nn.relu(h)
-
-        h = hk.Linear(300)(h)
+        h = hk.Linear(512, w_init=hk.initializers.RandomUniform(-3e-3, 3e-3))(h)
         h = jax.nn.relu(h)
-
-        return hk.Linear(1, w_init=hk.initializers.RandomUniform(-3e-3, 3e-3))(h)
+        h = hk.Linear(512, w_init=hk.initializers.RandomUniform(-3e-3, 3e-3))(h)
+        h = jax.nn.relu(h)
+        h = hk.Linear(512, w_init=hk.initializers.RandomUniform(-3e-3, 3e-3))(h)
+        h = jax.nn.relu(h)
+        return hk.Linear(1, )(h)
 

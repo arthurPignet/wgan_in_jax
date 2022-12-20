@@ -82,18 +82,27 @@ class WGAN:
         """
         params = self._init_critic_loss(rng, data, prior_data)
 
-        # get only critic, resp. generator params. 
+        # get only critic params
         critic_params = {k:params[k] for k in params.keys() if  k.startswith("critic/")}
+
+        # clip them
+        def clip(c_data) :
+          return jnp.clip(c_data, -self._clipping_value, self._clipping_value)
+        new_critic_params_clipped = jax.tree_util.tree_map(clip, critic_params)
+        params.update(new_critic_params_clipped)
+        # define critic optimizer
+        opt_critic_state = self._critic_optimizer.init(new_critic_params_clipped)
+
+
         generator_params = {k:params[k] for k in params.keys() if  k.startswith("generator/")}
 
-        opt_critic_state = self._critic_optimizer.init(critic_params)
         opt_generator_state = self._generator_optimizer.init(generator_params)
 
         return LearnerState(params=params, opt_critic_state=opt_critic_state, opt_generator_state=opt_generator_state)
 
     def _critic_loss_function(self,data, prior_samples) -> Tuple[chex.Array]:
 
-        generated_data =jax.lax.stop_gradient(GeneratorNetwork(data_dim=self._data_dim,name='generator')(prior_samples))
+        generated_data =GeneratorNetwork(data_dim=self._data_dim,name='generator')(prior_samples)
         critic_network =CriticNetwork(name='critic')
         real_values = critic_network(data)
         generated_values = critic_network(generated_data)
@@ -111,22 +120,22 @@ class WGAN:
     def _generator_loss_function(self, prior_samples) -> Tuple[chex.Array, Dict]:
         #critic loss
         generated_data =GeneratorNetwork(self._data_dim, name='generator')(prior_samples)
-        generated_values = jax.lax.stop_gradient(CriticNetwork(name='critic')(generated_data))
+        generated_values = CriticNetwork(name='critic')(generated_data)
         generated_loss = jnp.mean(generated_values)
 
         logs = dict(generated_loss=generated_loss)
         
-        return -generated_loss, logs
+        return generated_loss, logs
 
     def _update_critic(self, learner_state, data, prior_data):
         (critic_loss, aux_critic), critic_grads = self._grad_critic(learner_state.params, data, prior_data)
   
         # Select the only params and gradients we are interested in for this part, the critics
         critic_params = {k:learner_state.params[k] for k in learner_state.params.keys() if  k.startswith("critic/")}
-        critic_grads_only_value = {k:critic_grads[k] for k in critic_grads.keys() if k.startswith("critic/")}
+        critic_grads_only = {k:critic_grads[k] for k in critic_grads.keys() if k.startswith("critic/")}
   
         # Perform one optimization step
-        critic_udpates, new_opt_critic_state = self._critic_optimizer.update(critic_grads_only_value, learner_state.opt_critic_state, critic_params)
+        critic_udpates, new_opt_critic_state = self._critic_optimizer.update(critic_grads_only, learner_state.opt_critic_state, critic_params)
         new_critic_params = optax.apply_updates(critic_params, critic_udpates)
  
         def clip(c_data) :
@@ -141,15 +150,15 @@ class WGAN:
 
     def _update_generator(self, learner_state, prior_data) -> Tuple[LearnerState, Dict]:
         # generator update
-        #   Compute the generator loss and the gradients for ALL the parameters value, policy and targets
+        #   Compute the generator loss and the gradients for ALL the parameters
         (generator_loss, aux_generator), generator_grads = self._grad_generator(learner_state.params, prior_data)
 
         # Select the only params and gradients we are interested in for this part, the generators
         generator_params = {k:learner_state.params[k] for k in learner_state.params.keys() if  k.startswith("generator/")}
-        generator_grads_only_policy = {k:generator_grads[k] for k in generator_grads.keys() if k.startswith("generator/")}
+        generator_grads_only = {k:generator_grads[k] for k in generator_grads.keys() if k.startswith("generator/")}
 
         # Perform one optimization step
-        generator_updates, new_opt_generator_state = self._generator_optimizer.update(generator_grads_only_policy, learner_state.opt_generator_state, generator_params)
+        generator_updates, new_opt_generator_state = self._generator_optimizer.update(generator_grads_only, learner_state.opt_generator_state, generator_params)
         new_generator_params = optax.apply_updates(generator_params, generator_updates)
 
         # Update the generator
